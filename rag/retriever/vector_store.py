@@ -2,6 +2,7 @@
 
 import chromadb
 import structlog
+from chromadb.errors import NotFoundError
 
 logger = structlog.get_logger()
 
@@ -126,3 +127,36 @@ class VectorStore:
                 count=len(all_docs["ids"]),
                 collection=collection_name,
             )
+
+    def delete_profile_chunks(self, profile_id: str) -> int:
+        """Delete every chunk stored for a profile (for profile deletion).
+
+        Chunks are partitioned per profile into a ``profile_{profile_id}``
+        collection, the collection HybridRetriever reads, so the whole
+        collection is dropped. A profile with no collection is a no-op.
+
+        Args:
+            profile_id: Profile identifier
+
+        Returns:
+            Number of chunks deleted (0 if the profile had no collection)
+        """
+        collection_name = f"profile_{profile_id}"
+
+        # Use the client directly: self.get_collection would create the
+        # missing collection we are trying to get rid of.
+        try:
+            collection = self.client.get_collection(name=collection_name)
+        except NotFoundError:
+            logger.info("profile_chunks_absent", profile_id=profile_id)
+            return 0
+
+        count = collection.count()
+        self.client.delete_collection(name=collection_name)
+        logger.info(
+            "deleted_profile_chunks",
+            profile_id=profile_id,
+            count=count,
+            collection=collection_name,
+        )
+        return count
